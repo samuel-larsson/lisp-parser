@@ -20,7 +20,7 @@
 
 (defun get-wspace (ip)
    (setf c (read-char ip nil 'EOF))
-   (cond   
+   (cond
            ((whitespace c)  (get-wspace ip))
            (t                             c)
    )
@@ -33,7 +33,7 @@
 (defun get-name (ip lexeme c)
    (setf lexeme (str-con lexeme c))
    (setf c      (read-char ip nil 'EOF))
-   (cond        
+   (cond
                 ((alphanumericp c)  (get-name ip lexeme c))
                 (t                  (list        c lexeme))
    )
@@ -92,13 +92,27 @@
 (format t "Symbol: ~S ~%" lexeme)
    (list (cond
          ((string=   lexeme "program")  'PROGRAM )
+         ((string=   lexeme "input"  )  'INPUT   )
+         ((string=   lexeme "output" )  'OUTPUT  )
          ((string=   lexeme "var"    )  'VAR     )
-
-;; etc,  *** TO BE DONE ***
-
+         ((string=   lexeme "integer")  'TYPE    )
+         ((string=   lexeme "boolean")  'TYPE    )
+         ((string=   lexeme "real"   )  'TYPE    )
+         ((string=   lexeme "begin"  )  'BEGIN   )
+         ((string=   lexeme "end"    )  'END     )
+         ((string=   lexeme "("      )  'LP      )
+         ((string=   lexeme ")"      )  'RP      )
+         ((string=   lexeme "*"      )  'MULT    )
+         ((string=   lexeme "+"      )  'ADDI    )
+         ((string=   lexeme ","      )  'COMMA   )
+         ((string=   lexeme ";"      )  'SCOLON  )
+         ((string=   lexeme ":"      )  'COLON   )
+         ((string=   lexeme "="      )  'EQUALS  )
+         ((string=   lexeme "."      )  'FSTOP   )
+         ((string=   lexeme ":="      )  'ASSIGN )
          ((string=   lexeme ""       )	'EOF     )
          ((is-id     lexeme          )  'ID      )
-         ((is-number lexeme          )  'NUM     )
+         ((is-number lexeme          )  'OPERAND )
          (t                             'UNKNOWN )
          )
     lexeme)
@@ -109,11 +123,11 @@
 ;;=====================================================================
 
 (defun is-id (str)
-;; *** TO BE DONE ***
+  (and (every #'alphanumericp (rest (coerce str 'list))) (alpha-char-p (first (coerce str 'list))))
 )
 
 (defun is-number (str)
-;; *** TO BE DONE ***
+  (every #'digit-char-p str)
 )
 
 ;;=====================================================================
@@ -162,9 +176,9 @@
 ; lexeme - returns the lexeme from (token lexeme)(reader)
 ;;=====================================================================
 
-(defun token  (state) ;; *** TO BE DONE ***
+(defun token  (state) (first (pstate-lookahead state))
 )
-(defun lexeme (state) ;; *** TO BE DONE *** 
+(defun lexeme (state) (second (pstate-lookahead state))
 )
 
 ;;=====================================================================
@@ -172,11 +186,15 @@
 ;;=====================================================================
 
 (defun symtab-add (state id)
-;; *** TO BE DONE ***
+  (cond
+    ((equal (pstate-symtab state) nil) (setf (pstate-symtab state) (list id)))
+    ((equal (symtab-member state id) nil) (setf (pstate-symtab state) (append (pstate-symtab state) (list id))))
+    (t  (semerr1 state))
+  )
 )
 
 (defun symtab-member (state id)
-;; *** TO BE DONE ***
+  (if (member t (mapcar (lambda (s) (string= s id)) (pstate-symtab state))) t)
 )
 
 (defun symtab-display (state)
@@ -196,13 +214,13 @@
 )
 
 (defun synerr2 (state)
-    (format t "*** Syntax error:   Expected TYPE     found ~S ~%"
+    (format t "*** Syntax error:   Expected TYPE     found ~8S ~%"
            (lexeme state))
     (setf (pstate-status state) 'NOTOK)
 )
 
 (defun synerr3 (state)
-    (format t "*** Syntax error:   Expected OPERAND  found ~S ~%"
+    (format t "*** Syntax error:   Expected OPERAND  found ~8S ~%"
            (lexeme state))
     (setf (pstate-status state) 'NOTOK)
 )
@@ -223,7 +241,6 @@
     (format t "*** Semantic error: found ~8S expected EOF.~%"
           (lexeme state))
     (setf (pstate-status state) 'NOTOK)
-    ;; *** TO BE DONE - completed! ***
 )
 
 ;;=====================================================================
@@ -264,7 +281,83 @@
 ; <operand>       --> id | number
 ;;=====================================================================
 
-;; *** TO BE DONE ***
+(defun stat-part (state)
+  (match state 'BEGIN)
+  (stat-list state)
+  (match state 'END)
+  (match state 'FSTOP)
+)
+
+(defun stat-list-aux (state)
+  (match state 'SCOLON)
+  (stat-list state)
+)
+
+(defun stat-list (state)
+  (stat state)
+  (if (eq (first (pstate-lookahead state)) 'SCOLON) (stat-list-aux state))
+)
+
+(defun stat (state)
+  (assign-stat state)
+)
+
+(defun id-check (state)
+(if (and (eq (first (pstate-lookahead state)) 'ID)
+      (not (symtab-member state (second (pstate-lookahead state))))) (semerr2 state))
+)
+
+(defun assign-stat (state)
+  (id-check state)
+  (match state 'ID)
+  (match state 'ASSIGN)
+  (expr state)
+)
+
+(defun expr-aux (state)
+  (match state 'ADDI)
+  (expr state)
+)
+
+(defun expr (state)
+  (term state)
+  (if (eq (first (pstate-lookahead state)) 'ADDI) (expr-aux state))
+)
+
+(defun term-aux (state)
+  (match state 'MULT)
+  (term state)
+)
+
+(defun term (state)
+  (factor state)
+  (if (eq (first (pstate-lookahead state)) 'MULT) (term-aux state))
+)
+
+(defun pexpr (state)
+  (match state 'LP)
+  (expr state)
+  (match state 'RP)
+)
+
+(defun factor (state)
+  (cond
+    ((eq (first (pstate-lookahead state)) 'LP) (pexpr state))
+    (t (operand state))
+  )
+)
+
+(defun operand-id (state)
+  (if (not (symtab-member state (second (pstate-lookahead state))))
+    (semerr2 state)) (match state 'ID)
+)
+
+(defun operand (state)
+  (cond
+    ((eq (first (pstate-lookahead state)) 'ID) (operand-id state))
+    (t  (match state 'OPERAND))
+  )
+)
 
 ;;=====================================================================
 ; <var-part>     --> var <var-dec-list>
@@ -274,13 +367,61 @@
 ; <type>         --> integer | real | boolean
 ;;=====================================================================
 
-;; *** TO BE DONE ***
+(defun var-part (state)
+  (match state 'VAR)
+  (var-dec-list state)
+)
+
+(defun var-dec-list (state)
+  (var-dec state)
+  (if (eq (first (pstate-lookahead state)) 'ID) (var-dec-list state))
+)
+
+(defun var-dec (state)
+  (id-list state)
+  (match state 'COLON)
+  (typ state)
+  (match state 'SCOLON)
+)
+
+(defun check-id (state)
+  (if (eq (first (pstate-lookahead state)) 'ID) (symtab-add state (second (pstate-lookahead state))))
+)
+
+(defun id-list-aux (state)
+  (match state 'COMMA)
+  (id-list state)
+)
+
+(defun id-list (state)
+  (check-id state)
+  (match state 'ID)
+  (if (eq (first (pstate-lookahead state)) 'COMMA) (id-list-aux state))
+)
+
+(defun typ (state)
+  (cond
+    ((eq (first (pstate-lookahead state)) 'INTEGER) (match state 'TYPE))
+    ((eq (first (pstate-lookahead state)) 'REAL) (match state 'TYPE))
+    (t (match state 'TYPE))
+  )
+)
 
 ;;=====================================================================
 ; <program-header>
 ;;=====================================================================
 
-;; *** TO BE DONE ***
+(defun program-header (state)
+  (match state 'PROGRAM )
+  (match state 'ID      )
+  (match state 'LP    )
+  (match state 'INPUT   )
+  (match state 'COMMA   )
+  (match state 'OUTPUT  )
+  (match state 'RP    )
+  (match state 'SCOLON  )
+
+)
 
 ;;=====================================================================
 ; <program> --> <program-header><var-part><stat-part>
@@ -296,8 +437,13 @@
 ;;=====================================================================
 
 (defun check-end (state)
-;; *** TO BE DONE ***
+  (cond
+    ((not (eq (first (pstate-lookahead state)) 'EOF)) (semerr3 state) (get-token state) (check-end state))
+    (t nil)
+  )
 )
+
+
 
 ;;=====================================================================
 ; Test parser for file name input
@@ -328,24 +474,67 @@
 
 (defun parse-all ()
 
-;; *** TO BE DONE ***
-
+(mapcar 'parse '(
+"testfiles/testa.pas"
+"testfiles/testb.pas"
+"testfiles/testc.pas"
+"testfiles/testd.pas"
+"testfiles/teste.pas"
+"testfiles/testf.pas"
+"testfiles/testg.pas"
+"testfiles/testh.pas"
+"testfiles/testi.pas"
+"testfiles/testj.pas"
+"testfiles/testk.pas"
+"testfiles/testl.pas"
+"testfiles/testm.pas"
+"testfiles/testn.pas"
+"testfiles/testo.pas"
+"testfiles/testp.pas"
+"testfiles/testq.pas"
+"testfiles/testr.pas"
+"testfiles/tests.pas"
+"testfiles/testt.pas"
+"testfiles/testu.pas"
+"testfiles/testv.pas"
+"testfiles/testw.pas"
+"testfiles/testx.pas"
+"testfiles/testy.pas"
+"testfiles/testz.pas"
+"testfiles/testok1.pas"
+"testfiles/testok2.pas"
+"testfiles/testok3.pas"
+"testfiles/testok4.pas"
+"testfiles/testok5.pas"
+"testfiles/testok6.pas"
+"testfiles/testok7.pas"
+"testfiles/fun1.pas"
+"testfiles/fun2.pas"
+"testfiles/fun3.pas"
+"testfiles/fun4.pas"
+"testfiles/fun5.pas"
+"testfiles/sem1.pas"
+"testfiles/sem2.pas"
+"testfiles/sem3.pas"
+"testfiles/sem4.pas"
+"testfiles/sem5.pas"
+))
 )
+
+(defun parsing-output (state))
 
 ;;=====================================================================
 ; THE PARSER - test all files
 ;;=====================================================================
 
-;; (parse-all)
+(parse-all)
 
 ;;=====================================================================
 ; THE PARSER - test a single file
 ;;=====================================================================
 
-;;(parse "testfiles/testok1.pas")
+;;(parse filename)
 
 ;;=====================================================================
 ; THE PARSER - end of code
 ;;=====================================================================
-
-
