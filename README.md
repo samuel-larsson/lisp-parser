@@ -11,9 +11,9 @@
 * CLISP (macOS/Linux)
 
 #### How to run the parser:
-It runs the test suite by default, so to run a single program you have to uncomment the function:
+It runs the test suite by default, so to run a single program you have to uncomment the following function call:
 ```
-;; (parse(filename))
+;; (parse "filename.pas")
 ```
 Then run the parser:
 
